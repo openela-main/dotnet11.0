@@ -19,14 +19,15 @@ https://github.com/dotnet/runtime/pull/95216#issuecomment-1842799314
 ---
  .../RSA/EncryptDecrypt.cs                     | 49 ++++---------------
  .../opensslshim.h                             |  6 ---
- .../pal_evp_pkey_rsa.c                        | 13 -----
- 3 files changed, 10 insertions(+), 58 deletions(-)
+ .../pal_evp_pkey_rsa.c                        | 28 -----------
+ 3 files changed, 10 insertions(+), 73 deletions(-)
 
 
+diff --git a/src/runtime/src/libraries/Common/tests/System/Security/Cryptography/AlgorithmImplementations/RSA/EncryptDecrypt.cs b/src/runtime/src/libraries/Common/tests/System/Security/Cryptography/AlgorithmImplementations/RSA/EncryptDecrypt.cs
 index 0aaffebe5..011206433 100644
 --- a/src/runtime/src/libraries/Common/tests/System/Security/Cryptography/AlgorithmImplementations/RSA/EncryptDecrypt.cs
 +++ b/src/runtime/src/libraries/Common/tests/System/Security/Cryptography/AlgorithmImplementations/RSA/EncryptDecrypt.cs
-@@ -355,10 +355,19 @@ private void RsaCryptRoundtrip(RSAEncryptionPadding paddingMode, bool expectSucc
+@@ -358,10 +358,19 @@ private void RsaCryptRoundtrip(RSAEncryptionPadding paddingMode, bool expectSucc
              Assert.Equal(TestData.HelloBytes, output);
          }
  
@@ -47,8 +48,7 @@ index 0aaffebe5..011206433 100644
              using (RSA rsa = RSAFactory.Create(TestData.RSA2048Params))
              {
                  void RoundtripEmpty(RSAEncryptionPadding paddingMode)
-@@ -852,23 +861,5 @@ public static IEnumerable<object[]> OaepPaddingModes
-                 }
+@@ -868,22 +877,4 @@ public static IEnumerable<object[]> OaepPaddingModes
              }
          }
 -
@@ -75,7 +75,7 @@ diff --git a/src/runtime/src/native/libs/System.Security.Cryptography.Native/ope
 index db613a21d..db1ceb1a3 100644
 --- a/src/runtime/src/native/libs/System.Security.Cryptography.Native/opensslshim.h
 +++ b/src/runtime/src/native/libs/System.Security.Cryptography.Native/opensslshim.h
-@@ -397,10 +397,8 @@ extern bool g_libSslUses32BitTime;
+@@ -450,10 +450,8 @@ extern bool g_libSslUses32BitTime;
      REQUIRED_FUNCTION(ERR_peek_error) \
      REQUIRED_FUNCTION(ERR_peek_error_line) \
      REQUIRED_FUNCTION(ERR_peek_last_error) \
@@ -86,7 +86,7 @@ index db613a21d..db1ceb1a3 100644
      LIGHTUP_FUNCTION(ERR_set_debug) \
      LIGHTUP_FUNCTION(ERR_set_error) \
      REQUIRED_FUNCTION(EVP_aes_128_cbc) \
-@@ -471,7 +469,6 @@ extern bool g_libSslUses32BitTime;
+@@ -530,7 +528,6 @@ extern bool g_libSslUses32BitTime;
      REQUIRED_FUNCTION(EVP_PKCS82PKEY) \
      REQUIRED_FUNCTION(EVP_PKEY2PKCS8) \
      REQUIRED_FUNCTION(EVP_PKEY_CTX_ctrl) \
@@ -94,7 +94,7 @@ index db613a21d..db1ceb1a3 100644
      REQUIRED_FUNCTION(EVP_PKEY_CTX_free) \
      REQUIRED_FUNCTION(EVP_PKEY_CTX_get0_pkey) \
      REQUIRED_FUNCTION(EVP_PKEY_CTX_new) \
-@@ -953,10 +950,8 @@ extern TYPEOF(OPENSSL_gmtime)* OPENSSL_gmtime_ptr;
+@@ -1048,10 +1045,8 @@ extern TYPEOF(OPENSSL_gmtime)* OPENSSL_gmtime_ptr;
  #define ERR_peek_error_line ERR_peek_error_line_ptr
  #define ERR_peek_last_error ERR_peek_last_error_ptr
  #define ERR_put_error ERR_put_error_ptr
@@ -105,7 +105,7 @@ index db613a21d..db1ceb1a3 100644
  #define ERR_set_error ERR_set_error_ptr
  #define EVP_aes_128_cbc EVP_aes_128_cbc_ptr
  #define EVP_aes_128_cfb8 EVP_aes_128_cfb8_ptr
-@@ -1026,7 +1021,6 @@ extern TYPEOF(OPENSSL_gmtime)* OPENSSL_gmtime_ptr;
+@@ -1127,7 +1122,6 @@ extern TYPEOF(OPENSSL_gmtime)* OPENSSL_gmtime_ptr;
  #define EVP_PKCS82PKEY EVP_PKCS82PKEY_ptr
  #define EVP_PKEY2PKCS8 EVP_PKEY2PKCS8_ptr
  #define EVP_PKEY_CTX_ctrl EVP_PKEY_CTX_ctrl_ptr
@@ -117,16 +117,33 @@ diff --git a/src/runtime/src/native/libs/System.Security.Cryptography.Native/pal
 index a6040b939..34cf0087a 100644
 --- a/src/runtime/src/native/libs/System.Security.Cryptography.Native/pal_evp_pkey_rsa.c
 +++ b/src/runtime/src/native/libs/System.Security.Cryptography.Native/pal_evp_pkey_rsa.c
-@@ -69,19 +69,6 @@ static bool ConfigureEncryption(EVP_PKEY_CTX* ctx, RsaPaddingMode padding, const
+@@ -80,36 +80,6 @@ static bool ConfigureEncryption(EVP_PKEY_CTX* ctx, RsaPaddingMode padding, const
          {
              return false;
          }
 -
--        // OpenSSL 3.2 introduced a change where PKCS#1 RSA decryption does not fail for invalid padding.
--        // If the padding is invalid, the decryption operation returns random data.
--        // See https://github.com/openssl/openssl/pull/13817 for background.
--        // Some Linux distributions backported this change to previous versions of OpenSSL.
--        // Here we do a best-effort to set a flag to revert the behavior to failing if the padding is invalid.
+-        // OpenSSL 3.2 introduced "implicit rejection" for PKCS#1 RSA decryption
+-        // (https://github.com/openssl/openssl/pull/13817). Instead of returning an error for invalid
+-        // padding (software keys only), OpenSSL synthesizes a deterministic random value derived from the
+-        // private key and ciphertext, leaving callers to handle it with constant-time comparison. This
+-        // was intended to mitigate Bleichenbacher-style padding oracle attacks.
+-        //
+-        // Some Linux distributions (notably CentOS/RHEL via Red Hat backports) applied this change to
+-        // earlier OpenSSL versions (e.g. 3.1), which broke some .NET tests.
+-        //
+-        // We disable this feature ("implicit rejection") for several reasons:
+-        //   1. Platform consistency: other platforms (Windows, macOS) and hardware-backed keys still
+-        //      return explicit errors; callers should see the same behavior everywhere.
+-        //   2. It deviates from RSA specifications and OpenSSL itself had to disable it to pass FIPS
+-        //      conformance tests.
+-        //   3. It broke OpenSSL's own CMS (EnvelopedCMS) implementation, so OpenSSL turns it off
+-        //      internally when doing CMS operations.
+-        //   4. It does not fully solve the Bleichenbacher problem; it converts a "FFT" oracle into a
+-        //      "FFF" oracle. While FFF is ~1000x harder to exploit, the attack is not eliminated.
+-        //
+-        // Therefore we revert to the prior behavior: invalid padding produces an explicit error code
+-        // and .NET throws an exception. This is a best-effort flag; if the running OpenSSL version does
+-        // not recognize it, we silently ignore the failure (see ERR_set_mark / ERR_pop_to_mark below).
 -        ERR_set_mark();
 -
 -        EVP_PKEY_CTX_ctrl_str(ctx, "rsa_pkcs1_implicit_rejection", "0");

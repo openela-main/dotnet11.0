@@ -14,26 +14,32 @@
 
 # upstream can produce releases with a different tag than the SDK version
 #%%global upstream_tag v%%{runtime_version}
-%global upstream_tag v11.0.100-preview.6.26359.118
+%global upstream_tag v11.0.100-rc.3.26522.148
 %global upstream_tag_without_v %(echo %{upstream_tag} | sed -e 's|^v||')
 
 %global hostfxr_version %{runtime_version}
-%global runtime_version 11.0.0-preview.6.26359.118
-%global aspnetcore_runtime_version 11.0.0-preview.6.26359.118
-%global sdk_version 11.0.100-preview.6.26359.118
+%global runtime_version 11.0.0-rc.3.26522.148
+%global aspnetcore_runtime_version 11.0.0-rc.3.26522.148
+%global sdk_version 11.0.100-rc.3.26522.148
 %global sdk_feature_band_version %(echo %{sdk_version} | cut -d '-' -f 1 | sed -e 's|[[:digit:]][[:digit:]]$|00|')
 %global templates_version %{aspnetcore_runtime_version}
 #%%global templates_version %%(echo %%{runtime_version} | awk 'BEGIN { FS="."; OFS="." } {print $1, $2, $3+1 }')
 
-%global runtime_rpm_version 11.0.0~preview.6.26359.118
-%global aspnetcore_runtime_rpm_version 11.0.0~preview.6.26359.118
-%global sdk_rpm_version 11.0.100~preview.6.26359.118
+%global runtime_rpm_version 11.0.0~rc.3.26522.148
+%global aspnetcore_runtime_rpm_version 11.0.0~rc.3.26522.148
+%global sdk_rpm_version 11.0.100~rc.3.26522.148
 
 %global use_bundled_brotli 0
 %global use_bundled_libunwind 1
 %global use_bundled_llvm_libunwind 1
 %global use_bundled_rapidjson 0
 %global use_bundled_zlib 0
+
+%global bundled_brotli_version 1.1.1
+%global bundled_libunwind_version 1.8.0
+%global bundled_llvm_libunwind_version 22.1.1
+%global bundled_rapidjson_version 24b5e7a8b27f42fa16b96fc70aade9106cf7102f
+%global bundled_zlib_version 2.2.5
 
 %global use_lttng 0
 
@@ -77,19 +83,19 @@
 
 Name:           dotnet%{dotnetver}
 Version:        %{sdk_rpm_version}
-Release:        0.7%{?dist}
+Release:        0.12%{?dist}
 Summary:        .NET %{dotnetver} Runtime and SDK
 License:        0BSD AND Apache-2.0 AND (Apache-2.0 WITH LLVM-exception) AND APSL-2.0 AND BSD-2-Clause AND BSD-3-Clause AND BSD-4-Clause AND BSL-1.0 AND bzip2-1.0.6 AND CC0-1.0 AND CC-BY-3.0 AND CC-BY-4.0 AND CC-PDDC AND CNRI-Python AND EPL-1.0 AND GPL-2.0-only AND (GPL-2.0-only WITH GCC-exception-2.0) AND GPL-2.0-or-later AND GPL-3.0-only AND ICU AND ISC AND LGPL-2.1-only AND LGPL-2.1-or-later AND LicenseRef-Fedora-Public-Domain AND LicenseRef-ISO-8879 AND MIT AND MIT-Wu AND MS-PL AND MS-RL AND NCSA AND OFL-1.1 AND OpenSSL AND Unicode-DFS-2015 AND Unicode-DFS-2016 AND W3C-19980720 AND X11 AND Zlib
 
 URL:            https://github.com/dotnet/
 
-Source0:        https://github.com/dotnet/dotnet/archive/refs/tags/%{upstream_tag}.tar.gz#/dotnet-%{upstream_tag_without_v}.tar.gz
+Source0:        https://builds.dotnet.microsoft.com/dotnet/source-build/dotnet-source-%{upstream_tag_without_v}.tar.gz#/dotnet-%{upstream_tag_without_v}.tar.gz
 Source1:        https://github.com/dotnet/dotnet/releases/download/%{upstream_tag}/dotnet-%{upstream_tag_without_v}.tar.gz.sig
 Source2:        https://dotnet.microsoft.com/download/dotnet/release-key-2023.asc
 Source3:        https://github.com/dotnet/dotnet/releases/download/%{upstream_tag}/release.json
 %if %{with bootstrap}
 # The bootstrap SDK version is one listed in the global.json file of the main source archive
-%global bootstrap_sdk_version 11.0.100-preview.5.26302.115
+%global bootstrap_sdk_version 11.0.100-rc.1.26420.103
 # The source is generated on a Fedora box via:
 # ./build-dotnet-bootstrap-tarball %%{upstream_tag}
 Source10:        dotnet-prebuilts-%{bootstrap_sdk_version}-x64.tar.gz
@@ -97,7 +103,7 @@ Source11:        dotnet-prebuilts-%{bootstrap_sdk_version}-arm64.tar.gz
 # To generate ppc64le and s390x archives:
 # 1. Build the VMR commit in cross-build mode for the architecture
 # 2. Use `build-prebuilt-archive` to create the archive from the VMR
-%global bootstrap_sdk_version_ppc64le_s390x 11.0.100-preview.6.26366.102
+%global bootstrap_sdk_version_ppc64le_s390x 11.0.100-rc.1.26459.117
 Source12:        dotnet-prebuilts-%{bootstrap_sdk_version_ppc64le_s390x}-ppc64le.tar.gz
 Source13:        dotnet-prebuilts-%{bootstrap_sdk_version_ppc64le_s390x}-s390x.tar.gz
 %endif
@@ -115,8 +121,6 @@ Patch0:         runtime-re-enable-implicit-rejection.patch
 Patch1:         runtime-openssl-sha1.patch
 # fix an error caused by combining Fedora's CFLAGS with how .NET builds some assembly files
 Patch2:         runtime-disable-fortify-on-ilasm-parser.patch
-# https://github.com/dotnet/dotnet/pull/7357
-Patch3:         dotnet-7357-mono-no-aot.patch
 
 
 
@@ -180,11 +184,21 @@ BuildRequires:  zlib-devel
 
 # Avoid generating provides and requires for private libraries
 %global privlibs             libhostfxr
+%global privlibs %{privlibs}|libaspnetcoretools
 %global privlibs %{privlibs}|libclrgc
+%global privlibs %{privlibs}|libclrgcexp
 %global privlibs %{privlibs}|libclrjit
+%global privlibs %{privlibs}|libclrjit_universal_arm64_x64
+%global privlibs %{privlibs}|libclrjit_universal_arm_x64
+%global privlibs %{privlibs}|libclrjit_universal_wasm_x64
+%global privlibs %{privlibs}|libclrjit_unix_x64_x64
+%global privlibs %{privlibs}|libclrjit_win_x64_x64
+%global privlibs %{privlibs}|libclrjit_win_x86_x64
 %global privlibs %{privlibs}|libcoreclr
 %global privlibs %{privlibs}|libcoreclrtraceptprovider
+%global privlibs %{privlibs}|libdotnet-aot
 %global privlibs %{privlibs}|libhostpolicy
+%global privlibs %{privlibs}|libjitinterface_x64
 %global privlibs %{privlibs}|libmscordaccore
 %global privlibs %{privlibs}|libmscordbi
 %global privlibs %{privlibs}|libnethost
@@ -275,7 +289,7 @@ applications and micro-services.
 %package -n dotnet-runtime-%{dotnetver}
 
 Version:        %{runtime_rpm_version}
-Summary:        NET %{dotnetver} runtime
+Summary:        .NET %{dotnetver} runtime
 
 Requires:       dotnet-hostfxr-%{dotnetver}%{?_isa} >= %{runtime_rpm_version}-%{release}
 
@@ -284,27 +298,27 @@ Requires:       libicu%{?_isa}
 
 %if %{use_bundled_brotli}
 # See: src/runtime/src/native/external/brotli-version.txt
-Provides: bundled(libbrotli) = 1.1.0
+Provides: bundled(libbrotli) = %{bundled_brotli_version}
 %endif
 
 %if %{use_bundled_libunwind}
 # See: src/runtime/src/native/external/libunwind-version.txt
-Provides: bundled(libunwind) = 1.8.0
+Provides: bundled(libunwind) = %{bundled_libunwind_version}
 %endif
 
 %if %{use_bundled_llvm_libunwind}
 # See: src/runtime/src/native/external/llvm-libunwind-version.txt
-Provides: bundled(llvm-libunwind) = 20.1.0
+Provides: bundled(llvm-libunwind) = %{bundled_llvm_libunwind_version}
 %endif
 
 %if %{use_bundled_rapidjson}
 # See: src/runtime/src/native/external/rapidjson-version.txt
-Provides: bundled(rapidjson) = 24b5e7a8b27f42fa16b96fc70aade9106cf7102f
+Provides: bundled(rapidjson) = %{bundled_rapidjson_version}
 %endif
 
 %if %{use_bundled_zlib}
 # See: src/runtime/src/native/external/zlib-ng-version.txt
-Provides: bundled(zlib) = 2.2.5
+Provides: bundled(zlib) = %{bundled_zlib_version}
 %endif
 
 %description -n dotnet-runtime-%{dotnetver}
@@ -322,7 +336,7 @@ applications and micro-services.
 %package -n dotnet-runtime-dbg-%{dotnetver}
 
 Version:        %{runtime_rpm_version}
-Summary:        Managed debug symbols NET %{dotnetver} runtime
+Summary:        Managed debug symbols for the .NET %{dotnetver} runtime
 
 Requires:       dotnet-runtime-%{dotnetver}%{?_isa} = %{runtime_rpm_version}-%{release}
 
@@ -484,7 +498,26 @@ fi
 
 %setup -q -n dotnet-%{upstream_tag_without_v}
 
+# Fail early if an upstream update changes a bundled library without updating
+# the RPM's bundled() metadata. Some version files prefix their version with v.
+check_bundled_version() {
+    local expected=$1 version_file=$2 actual
+    actual=$(head -n 1 "$version_file") || exit 1
+    actual=${actual#v}
+    if [[ "$actual" != "$expected" ]]; then
+        echo "error: $version_file has version $actual; expected $expected" >&2
+        exit 1
+    fi
+}
+
+check_bundled_version %{bundled_brotli_version} src/runtime/src/native/external/brotli-version.txt
+check_bundled_version %{bundled_libunwind_version} src/runtime/src/native/external/libunwind-version.txt
+check_bundled_version %{bundled_llvm_libunwind_version} src/runtime/src/native/external/llvm-libunwind-version.txt
+check_bundled_version %{bundled_rapidjson_version} src/runtime/src/native/external/rapidjson-version.txt
+check_bundled_version %{bundled_zlib_version} src/runtime/src/native/external/zlib-ng-version.txt
+
 # Remove all prebuilts and binaries
+# Keep the special 1-byte _.pdb files, which make the build fail if removed
 rm -rf .dotnet/
 rm -rf packages/source-built
 find -type f \( \
@@ -516,6 +549,7 @@ find -type f \( \
     -iname '*.vsix' -or \
     -iname '*.zip' \
     \) \
+    -not -name '_.pdb' \
     -delete
 
 # No js/nodejs code should be getting built, and no javascript prebuilts
@@ -553,8 +587,6 @@ rm -rf prereqs/packages/archive/dotnet-sdk*.tar.gz
 %endif
 
 %autopatch -p1 -M 999
-
-sed -i -E 's/trap.*tempDir.*EXIT//' eng/source-build-toolset-init.sh
 
 %if ! %{use_bundled_brotli}
 rm -r src/runtime/src/native/external/brotli/
@@ -629,8 +661,8 @@ CXXFLAGS="$CXXFLAGS -Wno-used-but-marked-unused"
 
 %if 0%{?fedora} >= 43 || 0%{?rhel} > 10
 # -Wall includes Wjump-misses-init and other additional warnings in newer clang versions
-CFLAGS='-Wno-unknown-warning-option -Wno-jump-misses-init -Wno-implicit-void-ptr-cast -Wno-implicit-int-enum-cast'
-CXXFLAGS='-Wno-unknown-warning-option -Wno-jump-misses-init -Wno-implicit-void-ptr-cast -Wno-implicit-int-enum-cast'
+CFLAGS="$CFLAGS -Wno-unknown-warning-option -Wno-jump-misses-init -Wno-implicit-void-ptr-cast -Wno-implicit-int-enum-cast"
+CXXFLAGS="$CXXFLAGS -Wno-unknown-warning-option -Wno-jump-misses-init -Wno-implicit-void-ptr-cast -Wno-implicit-int-enum-cast"
 %endif
 
 export EXTRA_CFLAGS="$CFLAGS"
@@ -902,6 +934,7 @@ find %{buildroot}%{_libdir}/dotnet/sdk \( -type f -or -type l \) -name '*.pdb'  
 rm %{buildroot}%{_libdir}/dotnet/LICENSE.txt
 rm %{buildroot}%{_libdir}/dotnet/ThirdPartyNotices.txt
 rm %{buildroot}%{_libdir}/dotnet/dotnet
+rm %{buildroot}%{_libdir}/dotnet/dnx
 %endif
 
 
@@ -1006,6 +1039,26 @@ export COMPlus_LTTng=0
 
 
 %changelog
+* Tue Oct 27 2026 Omair Majid <omajid@redhat.com> - 11.0.100~rc.3.26522.148-0.12
+- Update to .NET SDK 11.0.100-rc.3.26522.148 and Runtime 11.0.0-rc.3.26522.148
+- Resolves: RHEL-292372
+
+* Wed Oct 14 2026 Omair Majid <omajid@redhat.com> - 11.0.100~rc.2.26504.105-0.11
+- Update to .NET SDK 11.0.100-rc.2.26504.105 and Runtime 11.0.0-rc.2.26504.105
+- Resolves: RHEL-276919
+
+* Tue Oct 06 2026 Omair Majid <omajid@redhat.com> - 11.0.100~rc.1.26425.128-0.10
+- Rebuild
+- Related: RHEL-260220
+
+* Tue Sep 29 2026 Omair Majid <omajid@redhat.com> - 11.0.100~rc.1.26425.128-0.9
+- Disable bootstrap
+- Related: RHEL-260220
+
+* Wed Sep 23 2026 Omair Majid <omajid@redhat.com> - 11.0.100~rc.1.26425.128-0.8
+- Update to .NET 11 RC 1
+- Resolves: RHEL-260220
+
 * Tue Aug 18 2026 Omair Majid <omajid@redhat.com> - 11.0.100~preview.6.26359.118-0.7
 - Disable bootstrap
 - Related: RHEL-192314
