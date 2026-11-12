@@ -30,7 +30,9 @@ ScanResult = collections.namedtuple('ScanResult',
                                     'file_name debug_info debug_abbrev file_symbols gnu_debuglink')
 
 file_symbol_exclude_list = [
-    'ilc',
+    'ilc', # NativeAOT compiler, no FILE symbols
+    'libaspnetcoretools.so', # NativeAOT-compiled, no FILE symbols
+    'libdotnet-aot.so', # NativeAOT-compiled, no FILE symbols
 ]
 
 def scan_file(file):
